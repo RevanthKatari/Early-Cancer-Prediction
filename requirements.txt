@@ -8,3 +8,5 @@ scikit-image
 tensorflow
 opencv-python
 keras
+streamlit
+plotly
