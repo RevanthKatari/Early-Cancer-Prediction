@@ -10,3 +10,8 @@ opencv-python
 keras
 streamlit
 plotly
+transformers
+torch
+accelerate
+sentencepiece
+protobuf
