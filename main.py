@@ -22,12 +22,20 @@ import streamlit as st
 from app.config import APP_DESCRIPTION, APP_TITLE, MODEL_HIGHLIGHTS
 from app.predictors import (
     get_cervical_fieldset,
+    get_brain_fieldset,
+    get_oral_fieldset,
     infer_brain,
     infer_oral,
     infer_cervical,
     load_cervical_defaults,
 )
 from app.preprocessing import InvalidImageError
+from app.medgemma_interpreter import (
+    interpret_brain_results,
+    interpret_oral_results,
+    interpret_cervical_results,
+    interpret_questionnaire_only,
+)
 
 
 st.set_page_config(
@@ -134,45 +142,194 @@ def _probability_chart(classes, probs, title):
     return fig
 
 
+def _render_questionnaire(fieldset, defaults_dict, key_prefix):
+    """Render a questionnaire form and return the payload."""
+    sections = defaultdict(list)
+    for field in fieldset:
+        sections[field.section].append(field)
+    
+    payload = {}
+    for section, items in sections.items():
+        with st.expander(section, expanded=section in {"Demographics", "Symptoms"}):
+            cols = st.columns(2)
+            for idx, field in enumerate(items):
+                target_col = cols[idx % 2]
+                with target_col:
+                    if field.input_type == "binary":
+                        default_val = defaults_dict.get(field.key, 0.0)
+                        payload[field.key] = 1.0 if st.toggle(field.label, value=bool(default_val), key=f"{key_prefix}_{field.key}_toggle") else 0.0
+                    else:
+                        # For number fields, use min_value as default if provided, otherwise use defaults_dict
+                        if field.min_value is not None:
+                            default_val = max(float(defaults_dict.get(field.key, field.min_value)), float(field.min_value))
+                        else:
+                            default_val = float(defaults_dict.get(field.key, 0.0))
+                        
+                        number_kwargs = {
+                            "value": default_val,
+                            "step": float(field.step),
+                            "key": f"{key_prefix}_{field.key}_number",
+                        }
+                        if field.min_value is not None:
+                            number_kwargs["min_value"] = float(field.min_value)
+                        if field.max_value is not None:
+                            number_kwargs["max_value"] = float(field.max_value)
+                        payload[field.key] = st.number_input(field.label, **number_kwargs)
+    return payload
+
+
 def _brain_tab():
     st.subheader("Brain MRI classifier")
     st.markdown(
-        "Upload a single axial MRI slice (any common format). "
+        "Upload a single axial MRI slice (any common format) and optionally fill out risk factor questionnaire. "
         "The bt-cnn2 model was trained on 180×180 crops from the Kaggle brain tumor dataset."
     )
-    uploaded = st.file_uploader("Brain MRI image", type=["jpg", "jpeg", "png"], key="brain_upload")
-    if not uploaded:
-        st.info("Upload an MRI image to run a prediction.")
-        return
-    with _prediction_flow("Analyzing MRI slice..."):
-        preview, probs, label, confidence = infer_brain(uploaded.getvalue())
-    col_img, col_chart = st.columns([1, 2])
-    with col_img:
-        st.image(preview, caption=f"Uploaded image · Prediction: {label}", use_column_width=True)
-        st.metric("Confidence", f"{confidence*100:.1f}%", delta=label.title())
-    with col_chart:
-        st.plotly_chart(_probability_chart(["Glioma", "Meningioma", "No tumor", "Pituitary"], probs, "Class likelihood"), use_container_width=True)
+    
+    tab1, tab2 = st.tabs(["📷 Image Analysis", "📋 Risk Factor Questionnaire"])
+    
+    with tab1:
+        uploaded = st.file_uploader("Brain MRI image", type=["jpg", "jpeg", "png"], key="brain_upload")
+        if uploaded:
+            with _prediction_flow("Analyzing MRI slice..."):
+                preview, probs, label, confidence = infer_brain(uploaded.getvalue())
+            col_img, col_chart = st.columns([1, 2])
+            with col_img:
+                st.image(preview, caption=f"Uploaded image · Prediction: {label}", use_column_width=True)
+                st.metric("Confidence", f"{confidence*100:.1f}%", delta=label.title())
+            with col_chart:
+                st.plotly_chart(_probability_chart(["Glioma", "Meningioma", "No tumor", "Pituitary"], probs, "Class likelihood"), use_container_width=True)
+            
+            # MedGemma Interpretation
+            st.markdown("---")
+            st.markdown("#### 🤖 AI-Powered Interpretation")
+            with st.expander("View detailed interpretation", expanded=True):
+                # Check if questionnaire data exists in session state
+                questionnaire_data = st.session_state.get("brain_questionnaire_data", None)
+                fieldset = get_brain_fieldset() if questionnaire_data else None
+                
+                with st.spinner("Generating interpretation with MedGemma..."):
+                    interpretation = interpret_brain_results(
+                        label,
+                        probs.tolist(),
+                        confidence,
+                        questionnaire_data,
+                        fieldset,
+                    )
+                    st.markdown(interpretation)
+        else:
+            st.info("Upload an MRI image to run a prediction.")
+    
+    with tab2:
+        st.markdown("#### Risk Factor Assessment")
+        st.markdown("Fill out the questionnaire to assess risk factors associated with brain tumors.")
+        fieldset = get_brain_fieldset()
+        # Set sensible defaults: use min_value for number fields, 0.0 for binary
+        defaults = {}
+        for field in fieldset:
+            if field.input_type == "binary":
+                defaults[field.key] = 0.0
+            else:
+                defaults[field.key] = float(field.min_value) if field.min_value is not None else 0.0
+        with st.form("brain_questionnaire"):
+            payload = _render_questionnaire(fieldset, defaults, "brain")
+            submitted = st.form_submit_button("Assess Risk Factors")
+        
+        if submitted:
+            # Store questionnaire data in session state for use in interpretation
+            st.session_state["brain_questionnaire_data"] = payload
+            
+            st.info("Risk factor assessment is currently informational. For predictions, please upload an MRI image in the Image Analysis tab.")
+            st.json(payload)
+            
+            # MedGemma Interpretation for questionnaire
+            st.markdown("---")
+            st.markdown("#### 🤖 AI-Powered Risk Factor Interpretation")
+            with st.expander("View interpretation", expanded=True):
+                with st.spinner("Generating interpretation with MedGemma..."):
+                    interpretation = interpret_questionnaire_only(
+                        payload,
+                        fieldset,
+                        "Brain Tumor",
+                    )
+                    st.markdown(interpretation)
 
 
 def _oral_tab():
     st.subheader("Oral cancer screening (Random Forest)")
     st.markdown(
-        "Images are resized to 64×64 and flattened before inference, matching the notebook pipeline. "
+        "Upload an oral cavity photograph and optionally fill out risk factor questionnaire. "
+        "Images are resized to 64×64 and flattened before inference. "
         "The model currently performs best on well-lit intraoral photographs."
     )
-    uploaded = st.file_uploader("Oral cavity photograph", type=["jpg", "jpeg", "png"], key="oral_upload")
-    if not uploaded:
-        st.info("Upload an oral image to evaluate the random forest classifier.")
-        return
-    with _prediction_flow("Evaluating oral photograph..."):
-        preview, probs, label, confidence = infer_oral(uploaded.getvalue())
-    labels = ["Non-cancer", "Cancer"]
-    col_img, col_chart = st.columns([1, 2])
-    with col_img:
-        st.image(preview, caption=f"Prediction: {label}", use_column_width=True)
-        st.metric("Cancer probability", f"{confidence*100:.1f}%", delta=label)
-    with col_chart:
-        st.plotly_chart(_probability_chart(labels, probs, "Probability"), use_container_width=True)
+    
+    tab1, tab2 = st.tabs(["📷 Image Analysis", "📋 Risk Factor Questionnaire"])
+    
+    with tab1:
+        uploaded = st.file_uploader("Oral cavity photograph", type=["jpg", "jpeg", "png"], key="oral_upload")
+        if uploaded:
+            with _prediction_flow("Evaluating oral photograph..."):
+                preview, probs, label, confidence = infer_oral(uploaded.getvalue())
+            labels = ["Non-cancer", "Cancer"]
+            col_img, col_chart = st.columns([1, 2])
+            with col_img:
+                st.image(preview, caption=f"Prediction: {label}", use_column_width=True)
+                st.metric("Cancer probability", f"{confidence*100:.1f}%", delta=label)
+            with col_chart:
+                st.plotly_chart(_probability_chart(labels, probs, "Probability"), use_container_width=True)
+            
+            # MedGemma Interpretation
+            st.markdown("---")
+            st.markdown("#### 🤖 AI-Powered Interpretation")
+            with st.expander("View detailed interpretation", expanded=True):
+                # Check if questionnaire data exists in session state
+                questionnaire_data = st.session_state.get("oral_questionnaire_data", None)
+                fieldset = get_oral_fieldset() if questionnaire_data else None
+                
+                with st.spinner("Generating interpretation with MedGemma..."):
+                    interpretation = interpret_oral_results(
+                        label,
+                        probs.tolist(),
+                        confidence,
+                        questionnaire_data,
+                        fieldset,
+                    )
+                    st.markdown(interpretation)
+        else:
+            st.info("Upload an oral image to evaluate the random forest classifier.")
+    
+    with tab2:
+        st.markdown("#### Risk Factor Assessment")
+        st.markdown("Fill out the questionnaire to assess risk factors associated with oral cancer.")
+        fieldset = get_oral_fieldset()
+        # Set sensible defaults: use min_value for number fields, 0.0 for binary
+        defaults = {}
+        for field in fieldset:
+            if field.input_type == "binary":
+                defaults[field.key] = 0.0
+            else:
+                defaults[field.key] = float(field.min_value) if field.min_value is not None else 0.0
+        with st.form("oral_questionnaire"):
+            payload = _render_questionnaire(fieldset, defaults, "oral")
+            submitted = st.form_submit_button("Assess Risk Factors")
+        
+        if submitted:
+            # Store questionnaire data in session state for use in interpretation
+            st.session_state["oral_questionnaire_data"] = payload
+            
+            st.info("Risk factor assessment is currently informational. For predictions, please upload an oral image in the Image Analysis tab.")
+            st.json(payload)
+            
+            # MedGemma Interpretation for questionnaire
+            st.markdown("---")
+            st.markdown("#### 🤖 AI-Powered Risk Factor Interpretation")
+            with st.expander("View interpretation", expanded=True):
+                with st.spinner("Generating interpretation with MedGemma..."):
+                    interpretation = interpret_questionnaire_only(
+                        payload,
+                        fieldset,
+                        "Oral Cancer",
+                    )
+                    st.markdown(interpretation)
 
 
 def _cervical_tab():
@@ -220,6 +377,19 @@ def _cervical_tab():
         risk_label = "High risk" if risk >= 0.65 else "Moderate risk" if risk >= 0.35 else "Low risk"
         st.success(f"{risk_label} · Probability of biopsy positive: {risk*100:.1f}%")
         st.plotly_chart(_probability_chart(["Negative", "Positive"], probs, "Biopsy probability"), use_container_width=True)
+        
+        # MedGemma Interpretation
+        st.markdown("---")
+        st.markdown("#### 🤖 AI-Powered Interpretation")
+        with st.expander("View detailed interpretation", expanded=True):
+            with st.spinner("Generating interpretation with MedGemma..."):
+                interpretation = interpret_cervical_results(
+                    risk,
+                    probs.tolist(),
+                    payload,
+                    fieldset,
+                )
+                st.markdown(interpretation)
 
     if batch_file:
         df = pd.read_csv(batch_file)
