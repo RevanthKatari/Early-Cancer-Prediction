@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Dict, List, Optional, Tuple
+import os
 import streamlit as st
 from functools import lru_cache
 
@@ -23,6 +24,13 @@ MEDGEMMA_MODEL_ID = "google/gemma-2-2b-it"  # Fallback to Gemma 2B IT model
 # - "google/gemma-2-9b-it" for larger model
 # - "google/medgemma-4b" if available on HuggingFace
 
+# Hugging Face authentication token
+# Get from environment variable (set HF_TOKEN environment variable)
+# For local development, you can set it in your shell:
+#   Windows: set HF_TOKEN=your_token_here
+#   Linux/Mac: export HF_TOKEN=your_token_here
+HF_TOKEN = os.getenv("HF_TOKEN")
+
 
 @lru_cache(maxsize=1)
 def _load_medgemma():
@@ -36,12 +44,21 @@ def _load_medgemma():
         device = "cuda" if has_cuda else "cpu"
         torch_dtype = torch.float16 if has_cuda else torch.float32
         
-        tokenizer = AutoTokenizer.from_pretrained(MEDGEMMA_MODEL_ID)
+        # Prepare token parameter (only if token is available)
+        token_kwargs = {}
+        if HF_TOKEN:
+            token_kwargs["token"] = HF_TOKEN
+        
+        tokenizer = AutoTokenizer.from_pretrained(
+            MEDGEMMA_MODEL_ID,
+            **token_kwargs,
+        )
         model = AutoModelForCausalLM.from_pretrained(
             MEDGEMMA_MODEL_ID,
             torch_dtype=torch_dtype,
             device_map="auto" if has_cuda else None,
             low_cpu_mem_usage=True,
+            **token_kwargs,
         )
         
         if not has_cuda:
