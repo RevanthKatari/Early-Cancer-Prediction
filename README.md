@@ -16,10 +16,14 @@ The project is motivated by the transformative capabilities of machine learning 
 
 ### Project Structure:
 - `app/` – Streamlit UI, preprocessing helpers, and lightweight inference utilities.
+  - **`app/main.py`** – Main entry point for the Streamlit application ⭐
 - `Dataset/` – Brain MRI, oral images, and cervical risk-factor CSVs sourced from Kaggle.
 - `Models/` – Serialized artifacts (`keras`, `joblib`) used by the demo.
 - `Notebooks/` – Exploratory training notebooks for each disease vertical.
+- `scripts/` – Training scripts for all models (recommended for retraining).
 - `requirements.lock` – Fully pinned dependency set for reproducible setups.
+
+**For detailed structure information, see [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md)**
 
 ## Quick Start
 1. Create and activate a Python 3.11 virtual environment.
@@ -28,7 +32,10 @@ The project is motivated by the transformative capabilities of machine learning 
 3. Download/verify the `Dataset/` and `Models/` folders from the release bundle or Kaggle sources described in each notebook.
 
 ## Running the Streamlit Studio
-```
+
+**Entry Point:** `app/main.py` (this is the only main.py file - root level duplicate has been removed)
+
+```bash
 streamlit run app/main.py
 ```
 The app exposes three tabs:
