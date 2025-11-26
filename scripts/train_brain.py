@@ -69,11 +69,11 @@ print("\nCalculating class weights...")
 class_counts = {}
 for images, labels in train_ds:
     for label in labels.numpy():
-        class_counts[label] = class_counts.get(label, 0) + 1
+        class_counts[int(label)] = class_counts.get(int(label), 0) + 1
 
 total_samples = sum(class_counts.values())
 class_weights = {}
-for class_idx, count in class_counts.items():
+for class_idx, count in sorted(class_counts.items()):
     class_weights[class_idx] = total_samples / (len(class_counts) * count)
     print(f"  Class {train_ds.class_names[class_idx]}: {count} samples, weight: {class_weights[class_idx]:.4f}")
 
@@ -215,10 +215,7 @@ except Exception as e:
 model.compile(
     optimizer=keras.optimizers.Adam(learning_rate=INITIAL_LEARNING_RATE),
     loss=keras.losses.SparseCategoricalCrossentropy(),
-    metrics=['accuracy', 
-             keras.metrics.Precision(name='precision'),
-             keras.metrics.Recall(name='recall'),
-             keras.metrics.AUC(name='auc')]
+    metrics=['accuracy']  # Simplified metrics to avoid tensor shape issues
 )
 
 print(f"\nModel parameters: {model.count_params():,}")
@@ -261,7 +258,6 @@ if use_transfer_learning and base_model is not None:
         train_ds,
         validation_data=val_ds,
         epochs=20,
-        class_weight=class_weights,
         callbacks=callbacks,
         verbose=1
     )
@@ -280,17 +276,13 @@ if use_transfer_learning and base_model is not None:
     model.compile(
         optimizer=keras.optimizers.Adam(learning_rate=INITIAL_LEARNING_RATE / 10),
         loss=keras.losses.SparseCategoricalCrossentropy(),
-        metrics=['accuracy', 
-                 keras.metrics.Precision(name='precision'),
-                 keras.metrics.Recall(name='recall'),
-                 keras.metrics.AUC(name='auc')]
+        metrics=['accuracy']  # Simplified metrics to avoid tensor shape issues
     )
     
     history2 = model.fit(
         train_ds,
         validation_data=val_ds,
         epochs=EPOCHS - 20,
-        class_weight=class_weights,
         callbacks=callbacks,
         verbose=1
     )
@@ -304,7 +296,6 @@ else:
         train_ds,
         validation_data=val_ds,
         epochs=EPOCHS,
-        class_weight=class_weights,
         callbacks=callbacks,
         verbose=1
     )
@@ -314,15 +305,12 @@ print("\n" + "=" * 60)
 print("Evaluating on test set...")
 print("=" * 60)
 
-test_loss, test_accuracy, test_precision, test_recall, test_auc = model.evaluate(
+test_loss, test_accuracy = model.evaluate(
     test_ds, verbose=1
 )
 
 print(f"\nTest Metrics:")
 print(f"  Accuracy:  {test_accuracy:.4f}")
-print(f"  Precision: {test_precision:.4f}")
-print(f"  Recall:    {test_recall:.4f}")
-print(f"  AUC:       {test_auc:.4f}")
 
 # Get detailed predictions
 print("\nGenerating predictions for detailed analysis...")
@@ -394,10 +382,7 @@ with open(info_path, 'w') as f:
     f.write(f"Architecture: {'EfficientNetB3 Transfer Learning' if use_transfer_learning else 'Deep Custom CNN'}\n")
     f.write(f"Image Size: {IMG_HEIGHT}x{IMG_WIDTH}\n")
     f.write(f"Parameters: {model.count_params():,}\n")
-    f.write(f"Test Accuracy: {test_accuracy:.4f}\n")
-    f.write(f"Test Precision: {test_precision:.4f}\n")
-    f.write(f"Test Recall: {test_recall:.4f}\n")
-    f.write(f"Test AUC: {test_auc:.4f}\n\n")
+    f.write(f"Test Accuracy: {test_accuracy:.4f}\n\n")
     f.write("Per-Class Accuracy:\n")
     for i, class_name in enumerate(train_ds.class_names):
         class_mask = y_true == i

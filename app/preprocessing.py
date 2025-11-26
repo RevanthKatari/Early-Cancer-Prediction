@@ -37,8 +37,9 @@ def prepare_brain_batch(file) -> Tuple[np.ndarray, Image.Image]:
 
 
 def prepare_oral_vector(file) -> Tuple[np.ndarray, Image.Image]:
-    """Return (vector, preview) for the oral cancer RF classifier.
+    """Return (vector, preview) for the oral cancer classifier.
     Images are normalized to [0, 1] by dividing by 255.
+    Supports both old (flattened) and new (batched) formats.
     """
     img = _load_image(file, ORAL_IMAGE_SIZE)
     arr = np.array(img, dtype=np.float32)
@@ -46,6 +47,18 @@ def prepare_oral_vector(file) -> Tuple[np.ndarray, Image.Image]:
     arr = arr / 255.0
     vector = arr.flatten().reshape(1, -1)
     return vector, img
+
+
+def prepare_oral_batch(file) -> Tuple[np.ndarray, Image.Image]:
+    """Return (batch, preview) for the oral cancer Keras model.
+    Images are normalized to [0, 1] and returned as batched array.
+    """
+    img = _load_image(file, ORAL_IMAGE_SIZE)
+    arr = np.array(img, dtype=np.float32)
+    # Normalize to [0, 1] range (model expects this)
+    arr = arr / 255.0
+    batch = np.expand_dims(arr, axis=0)
+    return batch, img
 
 
 def build_cervical_vector(

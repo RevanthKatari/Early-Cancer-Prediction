@@ -1,0 +1,16 @@
+Cervical Cancer Risk Prediction Model - Advanced Ensemble
+============================================================
+
+Best Model: Gradient Boosting
+Features: 33
+Test Accuracy: 0.9569
+Test AUC: 0.9062
+Test F1 Score: 0.6667
+CV AUC: 0.9575 (+/- 0.0784)
+
+All Models Performance:
+  Bagging: AUC=0.9011, F1=0.7143
+  Gradient Boosting: AUC=0.9062, F1=0.6667
+  AdaBoost: AUC=0.8753, F1=0.7857
+  Random Forest: AUC=0.8949, F1=0.4545
+  Voting Ensemble: AUC=0.8993, F1=0.6667

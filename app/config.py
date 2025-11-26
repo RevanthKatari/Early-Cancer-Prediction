@@ -9,13 +9,13 @@ MODELS_DIR = PROJECT_ROOT / "Models"
 BRAIN_MODEL_PATH = MODELS_DIR / "bt-cnn2.keras"
 CERVICAL_MODEL_PATH = MODELS_DIR / "cc_bagging_model"
 CERVICAL_SCALER_PATH = MODELS_DIR / "cc_scaler.joblib"
-ORAL_MODEL_PATH = MODELS_DIR / "oc_rf_model"
+ORAL_MODEL_PATH = MODELS_DIR / "oc_rf_model.keras"  # Now using Keras model
 
 BRAIN_CLASSES = ["glioma", "meningioma", "notumor", "pituitary"]
 ORAL_LABELS = {0: "Non-cancer", 1: "Cancer"}
 
 BRAIN_IMAGE_SIZE = (224, 224)
-ORAL_IMAGE_SIZE = (64, 64)
+ORAL_IMAGE_SIZE = (224, 224)  # Upgraded from 64x64 for better accuracy
 
 MODEL_HIGHLIGHTS = [
     {
